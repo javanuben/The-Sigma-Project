@@ -32,22 +32,7 @@ public class Executor implements Runnable {
 	
 	@Override
 	public void run() {
-		// Replace #IP with this computer's IP address
-		if(task.contains("#IP")) {
-			InetAddress thisIp = null;
-			try {
-				thisIp = InetAddress.getLocalHost();
-			} catch (UnknownHostException e1) {
-				System.out.println("ERROR: " + e1);
-			}
-			task.replaceAll("#IP", thisIp.getHostAddress());
-//			String temp[] = task.split("#IP");
-//			if(temp.length == 1) {
-//				task = temp[0] + thisIp.getHostAddress();
-//			} else if(temp.length == 2) {
-//				task = temp[0] + thisIp.getHostAddress() + temp[1];
-//			}
-		}
+		task = Executor.insertIP(task);
 		System.out.println("Executor started with task: " + task);
 		if(task.startsWith("send file_list")) {
 			String[] temp = task.split(" ");
@@ -95,6 +80,26 @@ public class Executor implements Runnable {
 		}
 		main.removeExecutor(this);
 		System.out.println("Executor stopped.");
+	}
+
+	public static String insertIP(String s) {
+		// Replace #IP with this computer's IP address
+		if(s.contains("#IP")) {
+			InetAddress thisIp = null;
+			try {
+				thisIp = InetAddress.getLocalHost();
+			} catch (UnknownHostException e1) {
+				System.out.println("ERROR: " + e1);
+			}
+//			task.replaceAll("#IP", thisIp.getHostAddress());
+			String temp[] = s.split("#IP");
+			if(temp.length == 1) {
+				s = temp[0] + thisIp.getHostAddress();
+			} else if(temp.length == 2) {
+				s = temp[0] + thisIp.getHostAddress() + temp[1];
+			}
+		}
+		return s;
 	}
 	
 	/**
@@ -310,6 +315,7 @@ public class Executor implements Runnable {
 	 * @param port	The port that should be used for the message sending.
 	 */
 	public static void sendText(String msg, String ip, int port) {
+		msg = Executor.insertIP(msg);
 		Socket sock = null;
 		try {
 			// Create a socket for sending the message.
