@@ -5,15 +5,14 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.OutputStream;
-import java.io.PrintWriter;
 import java.net.Socket;
 
 public class FileSender implements Runnable{
 
 	private File file;
 	private String ip;
-	private int fileSizePort = 1336;
-	private int filePort = 1337;
+	private int fileSizePort;
+	private int filePort;
 	private boolean ok = false;
 
 	@Override
@@ -35,38 +34,19 @@ public class FileSender implements Runnable{
 		return ok;
 	}
 	
-	public boolean sendFileSize() {
-		Socket sock = null;
+	private void close(Socket sock) {
 		try {
-			System.out.println("Connecting to " + ip + ':' + fileSizePort + "..");
-			sock = new Socket(ip, fileSizePort);
-			System.out.println("Connected.");
-			System.out.println("Sending file size..");
-			// Send file size
-			PrintWriter send = new PrintWriter(sock.getOutputStream());
-			send.println(file.length());
-			send.flush();
-			System.out.println("File size: " + file.length());
-			System.out.println("File size sent.");
-			send.close();
 			sock.close();
-			System.out.println("Connection closed.");
-			ok = true;
-		} catch (IOException e) {
-			System.out.println("Error: " + e);
-		} catch (NumberFormatException e) {
-			System.out.println("The port must be an integer!");
-		} finally {
-			try {
-				sock.close();
-			} catch (Exception e) {
-				// Do nothing
-			}
+		} catch (Exception e) {
+			// Do nothing
 		}
-		return true;
 	}
 	
-	public boolean sendFile() {
+	public void sendFileSize() {
+		ok = Executor.sendText(Long.toString(file.length()), ip, fileSizePort);
+	}
+	
+	public void sendFile() {
 		ok = false;
 		Socket sock = null;
 		try {
@@ -90,12 +70,7 @@ public class FileSender implements Runnable{
 		} catch (NumberFormatException e) {
 			System.out.println("The port must be an integer!");
 		} finally {
-			try {
-				sock.close();
-			} catch (Exception e) {
-				// Do nothing
-			}
+			close(sock);
 		}
-		return true;
 	}
 }
