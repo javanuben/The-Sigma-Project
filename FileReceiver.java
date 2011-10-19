@@ -2,6 +2,7 @@ package cc;
 
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
+import java.io.Closeable;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -27,16 +28,31 @@ public class FileReceiver implements Runnable {
 		return ok;
 	}
 	
-	private boolean getFileSize() {
+	private Socket listen(ServerSocket servSock, int port) throws IOException {
+		Socket sock = null;
+		servSock = new ServerSocket(port);
+		System.out.println("Attempting to listen on port " + fileSizePort);
+		System.out.println("Listening on port " + fileSizePort + " for file size");
+		sock = servSock.accept();
+		System.out.println("Connection accepted: " + sock);
+		return sock;
+	}
+	
+	public static void close(Closeable c) {
+		try {
+			c.close();
+		} catch (Exception e) {
+			// Do nothing
+		}
+		System.out.println("Connection closed");
+	}
+	
+	private void getFileSize() {
+		ok = false;
 		ServerSocket servSock = null;
 		Socket sock = null;
 		try {
-			System.out.println("Attempting to listen on port " + fileSizePort);
-			servSock = new ServerSocket(fileSizePort);
-			System.out.println("Listening on port " + fileSizePort + " for file size");
-			sock = servSock.accept();
-			System.out.println("Connection accepted: " + sock);
-
+			sock = listen(servSock, fileSizePort);
 			// Receive file size
 			InputStreamReader isz = new InputStreamReader(sock.getInputStream());
 			BufferedReader rec = new BufferedReader(isz);
@@ -44,37 +60,21 @@ public class FileReceiver implements Runnable {
 			System.out.println("File size: " + fileSize);
 			rec.close();
 			isz.close();
-
-			sock.close();
-			System.out.println("Connection closed");
 			ok = true;
 		} catch (IOException e) {
 			System.out.println("Error: " + e);
 		} finally {
-			try {
-				servSock.close();
-			} catch (Exception e) {
-				// Do nothing
-			}
-			try {
-				sock.close();
-			} catch (Exception e) {
-				// Do nothing
-			}
+			close(sock);
+			close(servSock);
 		}
-		return true;
 	}
 	
-	private boolean getFile() {
+	private void getFile() {
 		ok = false;
 		ServerSocket servSock = null;
 		Socket sock = null;
 		try {
-			System.out.println("Attempting to listen on port " + filePort);
-			servSock = new ServerSocket(filePort);
-			System.out.println("Listening on port " + filePort + " for file");
-			sock = servSock.accept();
-			System.out.println("Connection accepted: " + sock);
+			sock = listen(servSock, filePort);
 			// Receive file
 			System.out.println("Receiving file..");
 			long start = System.currentTimeMillis();
@@ -85,7 +85,6 @@ public class FileReceiver implements Runnable {
 			BufferedOutputStream bos = new BufferedOutputStream(new FileOutputStream(path));
 			bytesRead = is.read(mybytearray,0,mybytearray.length);
 			current = bytesRead;
-
 			do {
 				bytesRead = is.read(mybytearray, current, (mybytearray.length-current));
 				if(bytesRead >= 0) current += bytesRead;
@@ -97,24 +96,13 @@ public class FileReceiver implements Runnable {
 			long end = System.currentTimeMillis();
 			System.out.println("Time: " + (end-start) + "ms.");
 			bos.close();
-			sock.close();
-			System.out.println("Connection closed");
 			ok = true;
 		} catch (IOException e) {
 			System.out.println("Error: " + e);
 		} finally {
-			try {
-				servSock.close();
-			} catch (Exception e) {
-				// Do nothing
-			}
-			try {
-				sock.close();
-			} catch (Exception e) {
-				// Do nothing
-			}
+			close(sock);
+			close(servSock);
 		}
-		return true;
 	}
 	
 	@Override
