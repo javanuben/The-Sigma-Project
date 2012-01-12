@@ -13,6 +13,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 public class Executor implements Runnable {
@@ -65,8 +66,13 @@ public class Executor implements Runnable {
 			if(ip != null) {
 				System.out.println("IP: " + ip);
 			}
-		} else if(task.equalsIgnoreCase("sync file_list") || task.equalsIgnoreCase("synchronize file_list")) {
-			synchronizeFile_lists();
+		} else if(task.startsWith("sync file_list") || task.startsWith("synchronize file_list")) {
+			String[] temp = task.split(" ");
+			if(temp.length > 2 && temp[2].equalsIgnoreCase("false")) {
+				synchronizeFile_lists(false);
+			} else {
+				synchronizeFile_lists(true);
+			}
 		} else if(task.equalsIgnoreCase("load files")) {
 			loadFilesToSynchronize();
 		} else if(task.equalsIgnoreCase("sync files") || task.equalsIgnoreCase("synchronize files")) {
@@ -77,11 +83,53 @@ public class Executor implements Runnable {
 			} catch(NumberFormatException e) {
 				System.out.println("'send file' must be followed by a valid file id, separated with a space.");
 			}
+		} else if(task.equalsIgnoreCase("generate file_list")) {
+			Executor.generateEmptyFile(Main.FILE_LIST_PATH);
+		} else if(task.equalsIgnoreCase("generate other_file_list")) {
+			Executor.generateEmptyFile(Main.OTHER_FILE_LIST_PATH);
+		} else if(task.startsWith("syncing")) {
+			String[] temp = task.split(" ");
+			if(temp.length >= 2) {
+				String ip = temp[1].trim();
+				setIp(ip);
+			}
+			sendFile_list(false);
+		}
+		
+		else {
+			System.out.println("Unkown command!");
 		}
 		main.removeExecutor(this);
 		System.out.println("Executor stopped.");
 	}
 
+	public static boolean fileExists(String path) {
+		return (new File(path)).exists();
+	}
+	
+	/**
+	 * Generates an empty file at the given path.
+	 * 
+	 * @param path The path
+	 */
+	public static void generateEmptyFile(String path) {
+		FileWriter w = null;
+		try {
+			w = new FileWriter(path);
+			w.write("");
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+		} finally {
+			try {
+				w.close();
+			} catch (Exception e) {}
+		}
+	}
+	
+	public static boolean generateDirectory(String path) {
+		return new File(path).mkdir();
+	}
+	
 	public static String insertIP(String s) {
 		// Replace #IP with this computer's IP address
 		if(s.contains("#IP")) {
@@ -120,40 +168,81 @@ public class Executor implements Runnable {
 		}
 	}
 	
-	
 	/**
 	 * This method will tell the linked program to send all the files in main.files, and attempt to receive them.
+	 * It will also update the files' lastSynchronized attribute
 	 */
 	private void synchronizeFiles() {
-		System.out.println("Starting file synchronization.");
+		System.out.println("Starting file synchronization.\nImportant note: This method should not be used before 'load files'");
 		List<FileElement> files = main.getFiles();
+		if(files == null) {
+			System.out.println("An error occurred! Run 'load files' and try again.");
+			return;
+		}
 		for (FileElement fe : files) {
 			// Tell the linked program to send the file
 			sendText("send file " + fe.getId(), main.getIp(), Main.STANDARD_MESSAGE_PORT);
 			// Receive the file
 			FileReceiver fr = new FileReceiver(Main.STANDARD_FILE_SIZE_PORT, Main.STANDARD_FILE_PORT, fe.getPath());
 			fr.run();
+			fe.setLastSynchronized(new Date().getTime());
 		}
 		System.out.println("Done synchronizing files.");
+		System.out.println("Saving file_list..");
+		Executor.saveFiles(files, Main.FILE_LIST_PATH);
+		System.out.println("Done.");
 	}
 	
 	/**
 	 * This method will check what files on the file_list that needs to be updated (synchronized),
-	 * and pass them to main's setFiles method.
+	 * and pass them to main's setFiles method. 
+	 * User will be prompted (via reportConflictToUser) if conflicts are discovered.
 	 */
 	private void loadFilesToSynchronize() {
-		List<FileElement> files = new ArrayList<FileElement>();
+		System.out.println("Attempting to load files..");
 		// Load the files
-		files = loadFiles(Main.FILE_LIST_PATH);
+		List<FileElement> files = loadFiles(Main.FILE_LIST_PATH);
+		// Create a list to store conflicts in.
+		List<FileElement> conflicts = new ArrayList<FileElement>();
 		// Remove files that hasn't been updated since last synchronize
+		List<FileElement> toBeRemoved = new ArrayList<FileElement>();
 		for (FileElement fe : files) {
-			// If the file was synchronized after it was last modified on the other PC..
-			if(fe.getLastSynchronized() > fe.getLastModified2()) {
+			// If the file was synchronized after it was last modified on the other PC, or it does not exist on the other PC..
+			if(fe.getLastSynchronized() > fe.getLastModified2() || fe.getLastModified2() == 0) {
 				// we remove it from the list.
-				files.remove(fe);
+				toBeRemoved.add(fe);
+			}
+			// If both this file_list's file and the other file_list's file was modified, the file is a conflict.
+			// If the file was modified on both computers after last sync, it is a conflict
+			if(fe.getLastModified() > fe.getLastSynchronized() && fe.getLastModified2() > fe.getLastSynchronized()) {
+				conflicts.add(fe);
 			}
 		}
+		files.removeAll(toBeRemoved);
+
+		// Handle conflicts
+		for (FileElement conflict : conflicts) {
+			int todo = reportConflictToUser(conflict);
+			if(todo == SKIP) {
+				// If the user wants to skip the file, we remove it from the list.
+				files.remove(conflict);
+			} else if(todo == KEEP_BOTH) {
+				// If the user wants to keep both files, we save it with the same name, but followed by (conflict).
+				conflict.setPath(conflict.getPath() + "(conflict)");
+//				// And we adds the conflict to this program's file_list.
+//				mine.add(conflict);
+			} else if(todo == OVERWRITE) {
+//				// If the user wants to overwrite the old file, we simply add the new file (and hope that this works out!)
+//				mine.add(conflict);
+				// If the user wants to overwrite the old file, we don't have to do anything
+			}
+		}
+		
 		main.setFiles(files);
+		System.out.println("Files loaded:");
+		for (FileElement fe : files) {
+			System.out.println("\t" + fe.getName());
+		}
 	}
 	
 	/**
@@ -212,14 +301,14 @@ public class Executor implements Runnable {
 				// Read received text.
 				String msg = in.readLine().trim();
 				System.out.println("Command received: " + msg);
+				// Close connection
+				servSock.close();
+				sock.close();
 				// Start new executor with msg as it's task.
 				Executor e = new Executor(msg, main);
 				// Add the executor to main, so the program knows about the new executor.
 				main.addExecutor(e);
 				Thread t = new Thread(e);
-				// Close connection
-				servSock.close();
-				sock.close();
 				System.out.println("Connection closed");
 				t.start();
 				System.out.println("Executor started");
@@ -285,16 +374,22 @@ public class Executor implements Runnable {
 			}
 		}
 		// Save the updated file.
-		saveFiles(files, file_listPath);
+		Executor.saveFiles(files, file_listPath);
 		System.out.println("Update done.");
 	}
 	
 	/**
 	 * This method receives the file_list at the standard ports, and saves the file at OTHER_FILE_LIST_PATH.
+	 * If the temp directory does not exist, it will be created.
 	 * 
 	 * @return True if the file was received successfully. False if not.
 	 */
 	private boolean receiveFile_list() {
+		// Check if the temp-directory exists
+		if(!Executor.fileExists(Main.TEMP_PATH)) {
+			// Create it, if not.
+			Executor.generateDirectory(Main.TEMP_PATH);
+		}
 		// Start receiving the file_list, and save it at OTHER_FILE_LIST_PATH
 		System.out.println("Receiving file_list.txt..");
 		FileReceiver fr = new FileReceiver(Main.STANDARD_FILE_SIZE_PORT, Main.STANDARD_FILE_PORT, Main.OTHER_FILE_LIST_PATH);
@@ -313,8 +408,10 @@ public class Executor implements Runnable {
 	 * @param msg	The message that will be sent.
 	 * @param ip	The IP the message will be sent to.
 	 * @param port	The port that should be used for the message sending.
+	 * @return 		True if the sending was successful. False if not.
 	 */
-	public static void sendText(String msg, String ip, int port) {
+	public static boolean sendText(String msg, String ip, int port) {
+		boolean status = false;
 		msg = Executor.insertIP(msg);
 		Socket sock = null;
 		try {
@@ -330,6 +427,7 @@ public class Executor implements Runnable {
 			System.out.println("Message sent.");
 			send.close();
 			sock.close();
+			status = true;
 		} catch (IOException e) {
 			System.out.println("Error: " + e);
 		} catch (NumberFormatException e) {
@@ -342,6 +440,7 @@ public class Executor implements Runnable {
 			}
 		}
 		System.out.println("Connection closed.");
+		return status;
 	}
 
 	/**
@@ -458,8 +557,8 @@ public class Executor implements Runnable {
 	}
 	
 	/**
-	 * This method will merge the file_lists, and prompt the user (via requestPathsFromUser and reportConflictToUser)
-	 * when a new file or conflict is discovered.
+	 * This method will merge the file_lists, and prompt the user (via requestPathsFromUser)
+	 * when a new file is discovered.
 	 * It will also update the lastModified2 property.
 	 * 
 	 * Note: receiveFile_list or corresponding method should be called first. (This method uses the "other" file_list
@@ -467,15 +566,13 @@ public class Executor implements Runnable {
 	 */
 	private void mergeFile_lists() {
 		System.out.println("Note: receiveFile_list or corresponding method should be called first. (This method uses the 'other' file_list"
-	  + "at " + Main.OTHER_FILE_LIST_PATH + ".) If you haven't done this, you might end up loosing some work.");
+	  + "at " + Main.OTHER_FILE_LIST_PATH + ".) If you haven't done this, you might end up loosing some work. (If you only used 'sync file_list', you should be safe!");
 		// Load this programs file_list.
 		List<FileElement> mine = loadFiles(Main.FILE_LIST_PATH);
 		// Load the received file_list.
 		List<FileElement> other = loadFiles(Main.OTHER_FILE_LIST_PATH);
 		// Create a list to store new files in.
 		List<FileElement> news = new ArrayList<FileElement>();
-		// Create a list to store conflicts in.
-		List<FileElement> updates = new ArrayList<FileElement>();
 		// Find new files in other that should be synchronized
 		// Find the files that have been updated on other after last synchronization
 		for (FileElement ofe : other) {
@@ -485,36 +582,17 @@ public class Executor implements Runnable {
 					exists = true;
 					// Update the lastModified2 property
 					mfe.setLastModified2(ofe.getLastModified());
-					// If both this file_list's file and the other file_list's file was modified, the file is a conflict.
-					if(ofe.getLastModified() > ofe.getLastSynchronized() && mfe.getLastModified() > mfe.getLastSynchronized()) {
-						updates.add(ofe);
-					}
 				}
 			}
 			if(!exists) {
-				news.add(ofe);
+				// Using the old path to get the name. It will be overwritten anyways.
+				news.add(new FileElement(ofe.getId(), ofe.getPath(), 0, 0, ofe.getLastModified()));
 			}
 		}
 		// Request new paths from user for new files
 		news = requestPathsFromUser(news);
 		mine.addAll(news);
 		System.out.println("New paths set.");
-		// Handle conflicts
-		for (FileElement conflict : updates) {
-			int todo = reportConflictToUser(conflict);
-			if(todo == SKIP) {
-				// If the user wants to skip the file, we do nothing.
-				continue;
-			} else if(todo == KEEP_BOTH) {
-				// If the user wants to keep both files, we save it with the same name, but followed by (conflict).
-				conflict.setPath(conflict.getPath() + "(conflict)");
-				// And we adds the conflict to this program's file_list.
-				mine.add(conflict);
-			} else if(todo == OVERWRITE) {
-				// If the user wants to overwrite the old file, we simply add the new file (and hope that this works out!)
-				mine.add(conflict);
-			}
-		}
 		// Save the new synchronized file_list
 		saveFiles(mine, Main.FILE_LIST_PATH);
 		System.out.println("File_lists merged and saved!");
@@ -574,27 +652,34 @@ public class Executor implements Runnable {
 	/**
 	 * Synchronizes this program's file_list and the linked program's file_list by:
 	 * 1. Updating this program's information about when the files where last modified.
-	 * 2. Sends a "set_ip #IP" command to the linked program.
+	 * 2. Sends a "set_ip #IP" command to the linked program. (if the argument is true)
 	 * 3. Sends a "send file_list false" command to the linked program.
 	 * 4. Receives the file_list
 	 * 5. Attempting to merge the file_lists.
+	 * 
+	 * @param shouldSendIP 'set ip #IP' will be sent to linked program if true.
 	 */
-	private void synchronizeFile_lists(){
+	private void synchronizeFile_lists(boolean shouldSendIP){
 		// Update the information about when the files where last modified.
 		updateLastModified(Main.FILE_LIST_PATH);
-		// Tell the linked program what IP-address we have
-		sendText("set_ip #IP", main.getIp(), Main.STANDARD_MESSAGE_PORT);
-		// Tell the linked program to send the file_list, but don't send the receive file_list command.
-		sendText("send file_list false", main.getIp(), Main.STANDARD_MESSAGE_PORT);
-		// Receive the file_list
-		boolean ok = receiveFile_list();
-		// If the file_lise was received successfully..
-		if(ok) {
-			// Merge the file_lists.
-			mergeFile_lists();
-			System.out.println("File_lists synchronized successfully.");
-		} else {
-			System.out.println("Could not synchronize file_lists!");
+		
+		String msg = "syncing";
+		if(shouldSendIP) {
+			msg += " #IP";
 		}
+		sendText(msg, main.getIp(), Main.STANDARD_MESSAGE_PORT);
+		
+//		// Tell the linked program what IP-address we have
+//		if(shouldSendIP) {
+//			if(!sendText("set_ip #IP", main.getIp(), Main.STANDARD_MESSAGE_PORT)) return; 
+//		}
+//		// Tell the linked program to send the file_list, but don't send the receive file_list command.
+//		if(!sendText("send file_list false", main.getIp(), Main.STANDARD_MESSAGE_PORT)) return;
+		
+		// Receive the file_list
+		if(!receiveFile_list()) return;
+		// Merge the file_lists.
+		mergeFile_lists();
+		System.out.println("File_lists synchronized successfully.");
 	}
 }
