@@ -34,14 +34,6 @@ public class FileSender implements Runnable{
 		return ok;
 	}
 	
-	private void close(Socket sock) {
-		try {
-			sock.close();
-		} catch (Exception e) {
-			// Do nothing
-		}
-	}
-	
 	public void sendFileSize() {
 		ok = Executor.sendText(Long.toString(file.length()), ip, fileSizePort);
 	}
@@ -62,15 +54,16 @@ public class FileSender implements Runnable{
 			os.write(mybytearray,0,mybytearray.length);
 			os.flush();
 			System.out.println("File sent.");
-			sock.close();
-			System.out.println("Connection closed.");
 			ok = true;
 		} catch (IOException e) {
 			System.out.println("Error: " + e);
 		} catch (NumberFormatException e) {
 			System.out.println("The port must be an integer!");
 		} finally {
-			close(sock);
+//			FileReceiver.close(sock);
+			try {
+				sock.close();
+			} catch(Exception e) {}
 		}
 	}
 }

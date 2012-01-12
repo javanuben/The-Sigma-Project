@@ -11,11 +11,12 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
 
 public class Main {
 
-	public final static String VERSION = "0";
+	public final static String VERSION = "dev0";
 	public final static String PROGRAM_NAME = "The Sigma Project";
 	public final static int STANDARD_PORT = 1337;
 	public final static int STANDARD_FILE_PORT = 1340;
@@ -23,6 +24,7 @@ public class Main {
 	public final static int STANDARD_MESSAGE_PORT = 1338;
 	public final static String FILE_LIST_PATH = "file_list.txt";
 	public final static String OTHER_FILE_LIST_PATH = "temp//file_list.txt";
+	public final static String TEMP_PATH = "temp";
 	
 	private String ip;
 	private List<FileElement> files;
@@ -55,7 +57,6 @@ public class Main {
 			String input;
 			// Accept commands from user
 			while(true) {
-				System.out.print("> ");
 				input = reader.readLine().trim();
 				if(input.equalsIgnoreCase("exit") || input.equalsIgnoreCase("quit")) {
 					System.out.println("Exiting..");
@@ -71,7 +72,7 @@ public class Main {
 						t.notify();
 					}
 				} else {
-					// Send input to new executor
+					// Send input to a new executor
 					Executor e = new Executor(input, main);
 					main.addExecutor(e);
 					Thread t = new Thread(e);
@@ -113,7 +114,7 @@ public class Main {
 	
 	public Executor getNextUserInputWaiter() {
 		if(!executorsWaitingForUserInput.isEmpty()) {
-			return executorsWaitingForUserInput.get(0);
+			return executorsWaitingForUserInput.remove(0);
 		} else {
 			return null;
 		}

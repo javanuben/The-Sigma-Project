@@ -28,31 +28,35 @@ public class FileReceiver implements Runnable {
 		return ok;
 	}
 	
-	private Socket listen(ServerSocket servSock, int port) throws IOException {
+	private Socket listen(int port) throws IOException {
 		Socket sock = null;
-		servSock = new ServerSocket(port);
+		ServerSocket servSock = new ServerSocket(port);
 		System.out.println("Attempting to listen on port " + fileSizePort);
 		System.out.println("Listening on port " + fileSizePort + " for file size");
 		sock = servSock.accept();
+		servSock.close();
 		System.out.println("Connection accepted: " + sock);
 		return sock;
 	}
 	
-	public static void close(Closeable c) {
-		try {
-			c.close();
-		} catch (Exception e) {
-			// Do nothing
-		}
-		System.out.println("Connection closed");
-	}
+//	public static void close(Closeable c) {
+//		try {
+//			if(c instanceof Closeable) {
+//				c.close();
+//			} else {
+//				System.out.println("Oops! Something weird happened when closing a socket! You might have to restart your computer to make the port accessable again.");
+//			}
+//		} catch (Exception e) {
+//			// Do nothing
+//		}
+//		System.out.println("Connection closed");
+//	}
 	
 	private void getFileSize() {
 		ok = false;
-		ServerSocket servSock = null;
 		Socket sock = null;
 		try {
-			sock = listen(servSock, fileSizePort);
+			sock = listen(fileSizePort);
 			// Receive file size
 			InputStreamReader isz = new InputStreamReader(sock.getInputStream());
 			BufferedReader rec = new BufferedReader(isz);
@@ -64,17 +68,19 @@ public class FileReceiver implements Runnable {
 		} catch (IOException e) {
 			System.out.println("Error: " + e);
 		} finally {
-			close(sock);
-			close(servSock);
+//			close(sock);
+//			close(servSock);
+			try {
+				sock.close();
+			} catch(Exception e) {}
 		}
 	}
 	
 	private void getFile() {
 		ok = false;
-		ServerSocket servSock = null;
 		Socket sock = null;
 		try {
-			sock = listen(servSock, filePort);
+			sock = listen(filePort);
 			// Receive file
 			System.out.println("Receiving file..");
 			long start = System.currentTimeMillis();
@@ -100,8 +106,11 @@ public class FileReceiver implements Runnable {
 		} catch (IOException e) {
 			System.out.println("Error: " + e);
 		} finally {
-			close(sock);
-			close(servSock);
+//			close(sock);
+//			close(servSock);
+			try {
+				sock.close();
+			} catch(Exception e) {}
 		}
 	}
 	

@@ -31,7 +31,6 @@ public class FileElement {
 			}
 		}
 		String s = path.substring(pos); 
-		System.out.println("Name should be: " + s);
 		return s;
 	}
 	
