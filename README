@@ -2,4 +2,4 @@ Introduction:
 The Sigma Project is (going to be) a program for file synchronization. It is inspired by Dropbox (http://www.dropbox.com/), but it aims to be a little more flexible. For instance: With Dropbox, you need to put all your files that you want to be reachable from other computers in the same folder. With The Sigma Project, you can have your files spread all over your file system, even over several hard drives!
 
 The name:
-The name "The Sigma Project" is a temporarily name, used under development. The greek big Sigma is in the mathematics used as a symbol for summation (http://en.wikipedia.org/wiki/Summation#Capital-sigma_notation). The name represents the goal of the program; to sum your important files on your different computers, and present them as one united sum.
+"The Sigma Project" is a temporarily name, used under development. The greek big Sigma is in the mathematics used as a symbol for summation (http://en.wikipedia.org/wiki/Summation#Capital-sigma_notation). The name represents the goal of the program; to sum your important files on your different computers, and present them as one united sum.
