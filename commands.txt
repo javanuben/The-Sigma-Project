@@ -1,0 +1,47 @@
+send file_list {boolean}	Updates the lastModified attribute in the file_list,
+				if boolean argument is true: sends a "receive file_list" 
+				command to the linked program, and sends the file "file_list.txt"
+				If boolean argument is not suplied, it is set to true.
+
+receive file_list		Prepares the program to receive the file_list from another program,
+				and saves the file_list at temp/file_list.txt
+				If the temp directory does not exist, it will be created.
+
+merge file_list			Merges the current file_list and the received file_list at
+				"temp/file_list.txt". If new files are discovered, the user is prompted
+				at the console to suply a path to where the file should be stored.
+				Note: This command should not be used without first receiving the linked
+				program's file_list (if existing, an old (and outdated!) file_list will
+				be used).
+
+sync file_list {boolean}	Equivalent to 'synchronize file_list'.
+				Synchronizes this program's file_list and the linked program's file_list
+				If boolean argument is true or not supplied, a 'set_ip #IP'-command will be sent
+				to the linked program.
+				(No prerequisites are required (except 'set_ip' on this program).)
+
+send_command [command]		Sends the command to the linked program.
+
+listen [port]			Listens at port for commands.
+
+set_ip [ip]			Links the program to ip. Note: '#IP' can be used (with every command) to
+				use the current programs IP-address.
+
+print ip			Prints the ip that the program is linked to.
+
+exit				Equivalent to 'quit'.
+				Terminates the program, and forces executors (threads) to stop.
+
+load files			Loads the files that should be synchronized (files that has been updated
+				since last synchronization) (Needed to run sync files).
+				If a conflict is discovered, the user is prompted.
+
+send file [id]			Sends the file with the corresponding id to the linked program.
+
+sync files			Equivalent to 'synchronize files'.
+				Starts file synchronizing. 
+				Important note: Should not be used before 'load files'!
+
+generate file_list		Generates an empty file_list
+
+generate other_file_list [?!]	Generates an empty file_list for the other program (usually in temp/)
