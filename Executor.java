@@ -14,6 +14,7 @@ import java.net.Socket;
 import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Date;
+import java.util.Hashtable;
 import java.util.List;
 
 public class Executor implements Runnable {
@@ -69,9 +70,9 @@ public class Executor implements Runnable {
 		} else if(task.startsWith("sync file_list") || task.startsWith("synchronize file_list")) {
 			String[] temp = task.split(" ");
 			if(temp.length > 2 && temp[2].equalsIgnoreCase("false")) {
-				synchronizeFile_lists(false);
+				synchronizeFile_list(false);
 			} else {
-				synchronizeFile_lists(true);
+				synchronizeFile_list(true);
 			}
 		} else if(task.equalsIgnoreCase("load files")) {
 			loadFilesToSynchronize();
@@ -94,6 +95,27 @@ public class Executor implements Runnable {
 				setIp(ip);
 			}
 			sendFile_list(false);
+		} else if(task.startsWith("add_file")) {
+			String[] temp = task.split(" ");
+			if(temp.length < 2) {
+				System.out.println("File must be specified after 'add_file'");
+			} else {
+				String file = task.replace("add_file ", "");
+				addFileToFile_list(file);
+			}
+		} else if(task.startsWith("remove_file") || task.startsWith("rm_file")) {
+			String[] temp = task.split(" ");
+			if(temp.length < 2) {
+				System.out.println("File ID must be specified after 'remove_file'");
+			} else {
+				try {
+					removeFileFromFile_list(Integer.parseInt(temp[1].trim()));
+				} catch(NumberFormatException e) {
+					System.out.println("The file ID must be an integer!");
+				}
+			}
+		} else if(task.equalsIgnoreCase("print file_list")) {
+			printFile_list(Main.FILE_LIST_PATH);
 		}
 		
 		else {
@@ -174,6 +196,10 @@ public class Executor implements Runnable {
 	 */
 	private void synchronizeFiles() {
 		System.out.println("Starting file synchronization.\nImportant note: This method should not be used before 'load files'");
+		if(main.getIp() == null) {
+			System.out.println("IP is not set. Skipping synchronization!");
+			return;
+		}
 		List<FileElement> files = main.getFiles();
 		if(files == null) {
 			System.out.println("An error occurred! Run 'load files' and try again.");
@@ -181,25 +207,38 @@ public class Executor implements Runnable {
 		}
 		for (FileElement fe : files) {
 			// Tell the linked program to send the file
-			sendText("send file " + fe.getId(), main.getIp(), Main.STANDARD_MESSAGE_PORT);
+			if(!sendText("send file " + fe.getId(), main.getIp(), Main.STANDARD_MESSAGE_PORT)) {
+				System.out.println("An error occurred. Skipping synchronization!");
+				return;
+			}
 			// Receive the file
 			FileReceiver fr = new FileReceiver(Main.STANDARD_FILE_SIZE_PORT, Main.STANDARD_FILE_PORT, fe.getPath());
 			fr.run();
-			fe.setLastSynchronized(new Date().getTime());
 		}
 		System.out.println("Done synchronizing files.");
 		System.out.println("Saving file_list..");
-		Executor.saveFiles(files, Main.FILE_LIST_PATH);
+		// Update the lastSynchronized attribute for the synchronized files
+		List<FileElement> l = loadFiles(Main.FILE_LIST_PATH);
+		for (FileElement fe1 : l) {
+			for (FileElement fe2 : files) {
+				if(fe1.getId() == fe2.getId()) {
+					fe1.setLastSynchronized(new Date().getTime());
+				}
+			}
+		}
+		Executor.saveFiles(l, Main.FILE_LIST_PATH);
 		System.out.println("Done.");
 	}
-	
+
 	/**
 	 * This method will check what files on the file_list that needs to be updated (synchronized),
-	 * and pass them to main's setFiles method. 
+	 * and pass them to main's setFiles method.  (Will also call updateLastModified)
 	 * User will be prompted (via reportConflictToUser) if conflicts are discovered.
 	 */
 	private void loadFilesToSynchronize() {
 		System.out.println("Attempting to load files..");
+		// Update lastModified
+		updateLastModified(Main.FILE_LIST_PATH);
 		// Load the files
 		List<FileElement> files = loadFiles(Main.FILE_LIST_PATH);
 		// Create a list to store conflicts in.
@@ -207,14 +246,12 @@ public class Executor implements Runnable {
 		// Remove files that hasn't been updated since last synchronize
 		List<FileElement> toBeRemoved = new ArrayList<FileElement>();
 		for (FileElement fe : files) {
-			// If the file was synchronized after it was last modified on the other PC, or it does not exist on the other PC..
-			if(fe.getLastSynchronized() > fe.getLastModified2() || fe.getLastModified2() == 0) {
+			// If the file was synchronized after (or at the same time) it was last modified on the other PC, or it does not exist on the other PC..
+			if(fe.getLastSynchronized() >= fe.getLastModified2() || fe.getLastModified2() == 0) {
 				// we remove it from the list.
 				toBeRemoved.add(fe);
 			}
-			// If both this file_list's file and the other file_list's file was modified, the file is a conflict.
-			// If the file was modified on both computers after last sync, it is a conflict
-			if(fe.getLastModified() > fe.getLastSynchronized() && fe.getLastModified2() > fe.getLastSynchronized()) {
+			if(fe.isConflict()) {
 				conflicts.add(fe);
 			}
 		}
@@ -238,10 +275,15 @@ public class Executor implements Runnable {
 			}
 		}
 		
+		// Load the files
 		main.setFiles(files);
-		System.out.println("Files loaded:");
-		for (FileElement fe : files) {
-			System.out.println("\t" + fe.getName());
+		if(files.isEmpty()) {
+			System.out.println("All files are up to date!");
+		} else {
+			System.out.println("Files loaded:");
+			for (FileElement fe : files) {
+				System.out.println("\t" + fe.getName());
+			}
 		}
 	}
 	
@@ -571,29 +613,68 @@ public class Executor implements Runnable {
 		List<FileElement> mine = loadFiles(Main.FILE_LIST_PATH);
 		// Load the received file_list.
 		List<FileElement> other = loadFiles(Main.OTHER_FILE_LIST_PATH);
-		// Create a list to store new files in.
-		List<FileElement> news = new ArrayList<FileElement>();
+		// Create a list to store new files in (from the other computer).
+		List<FileElement> newsOther = new ArrayList<FileElement>();
+		// Find the new files on this computer, that haven't been synchronized yet
+		List<FileElement> newsMine = new ArrayList<FileElement>();
+		List<FileElement> toBeRemoved = new ArrayList<FileElement>();
+		for (FileElement fe : mine) {
+			if(fe.getLastSynchronized() == 0 && fe.getLastModified2() == 0) {
+				newsMine.add(fe);
+				toBeRemoved.add(fe);
+			}
+		}
+		// Create a list for those which need new IDs
+		List<FileElement> needNewID = new ArrayList<FileElement>();
 		// Find new files in other that should be synchronized
-		// Find the files that have been updated on other after last synchronization
+		// Find the files that have been updated on other computer, after last synchronization
 		for (FileElement ofe : other) {
 			boolean exists = false;
 			for (FileElement mfe : mine) {
 				if(mfe.getId() == ofe.getId()) {
-					exists = true;
-					// Update the lastModified2 property
-					mfe.setLastModified2(ofe.getLastModified());
+					// Check if it is a new file
+					if(mfe.getLastSynchronized() == 0 && mfe.getLastModified2() == 0) {
+						// Then the ID is used for two files!
+						needNewID.add(mfe);
+						System.out.println(mfe.getName() + " needs a new ID.");
+					} else {
+						exists = true;
+						// Update the lastModified2 property
+						mfe.setLastModified2(ofe.getLastModified());
+					}
 				}
 			}
 			if(!exists) {
 				// Using the old path to get the name. It will be overwritten anyways.
-				news.add(new FileElement(ofe.getId(), ofe.getPath(), 0, 0, ofe.getLastModified()));
+				newsOther.add(new FileElement(ofe.getId(), ofe.getPath(), 0, 0, ofe.getLastModified()));
 			}
 		}
+		// Remove the files that had a conflicting ID.
+		mine.removeAll(toBeRemoved);
 		// Request new paths from user for new files
-		news = requestPathsFromUser(news);
-		mine.addAll(news);
+		newsOther = requestPathsFromUser(newsOther);
+		mine.addAll(newsOther);
 		System.out.println("New paths set.");
 		// Save the new synchronized file_list
+		saveFiles(mine, Main.FILE_LIST_PATH);
+		// Find new IDs for the collisions
+		int newID = getNewFileID();
+		for (FileElement fe : needNewID) {
+			System.out.println("Getting new ID for " + fe.getName());
+			fe.setId(newID);
+			newID++;
+		}
+		// Merge needNewID and toBeRemoved
+		Hashtable<Integer, Integer> ht = new Hashtable<Integer, Integer>();
+		for (FileElement fe : needNewID) {
+			ht.put(fe.getId(), fe.getId());
+		}
+		for (FileElement fe : toBeRemoved) {
+			if(!ht.contains(fe.getId())) {
+				needNewID.add(fe);
+			}
+		}
+		mine.addAll(needNewID);
 		saveFiles(mine, Main.FILE_LIST_PATH);
 		System.out.println("File_lists merged and saved!");
 		for (FileElement fe : mine) {
@@ -601,6 +682,18 @@ public class Executor implements Runnable {
 		}
 	}
 
+	/**
+	 * This method will print the file_list's content using System.out.
+	 * 
+	 * @param path	Path to the file_list
+	 */
+	private void printFile_list(String path) {
+		List<FileElement> files = loadFiles(path);
+		for (FileElement fe : files) {
+			System.out.println(fe);
+		}
+	}
+	
 	/**
 	 * This method prompts the user, via the command line, for paths to the new files.
 	 * 
@@ -650,6 +743,55 @@ public class Executor implements Runnable {
 	}
 
 	/**
+	 * This method adds the file path given as parameter to the file_list.
+	 * 
+	 * @param path	Path to the file that should be added.
+	 */
+	private void addFileToFile_list(String path) {
+		List<FileElement> files = loadFiles(Main.FILE_LIST_PATH);
+		files.add(new FileElement(getNewFileID(), path, 0, 0, 0));
+		saveFiles(files, Main.FILE_LIST_PATH);
+	}
+	
+	/**
+	 * This method will remove the file given as parameter, from the file_list (given that the file exists).
+	 * 
+	 * @param id	The file's ID
+	 */
+	private void removeFileFromFile_list(int id) {
+		List<FileElement> files = loadFiles(Main.FILE_LIST_PATH);
+		FileElement f = null;
+		for (FileElement fe : files) {
+			if(fe.getId() == id) {
+				f = fe;
+			}
+		}
+		if(f == null) {
+			System.out.println("File not found!");
+		} else {
+			files.remove(f);
+			saveFiles(files, Main.FILE_LIST_PATH);
+			System.out.println(f.getName() + " was removed!");
+		}
+	}
+	
+	/**
+	 * This method will find the next available file ID.
+	 *  
+	 * @return	The file ID
+	 */
+	private int getNewFileID() {
+		List<FileElement> files = loadFiles(Main.FILE_LIST_PATH);
+		int max = 0;
+		for (FileElement fe : files) {
+			if(max < fe.getId()) {
+				max = fe.getId();
+			}
+		}
+		return max + 1;
+	}
+	
+	/**
 	 * Synchronizes this program's file_list and the linked program's file_list by:
 	 * 1. Updating this program's information about when the files where last modified.
 	 * 2. Sends a "set_ip #IP" command to the linked program. (if the argument is true)
@@ -659,7 +801,11 @@ public class Executor implements Runnable {
 	 * 
 	 * @param shouldSendIP 'set ip #IP' will be sent to linked program if true.
 	 */
-	private void synchronizeFile_lists(boolean shouldSendIP){
+	private void synchronizeFile_list(boolean shouldSendIP) {
+		if(main.getIp() == null) {
+			System.out.println("IP is not set. Skipping synchronization!");
+			return;
+		}
 		// Update the information about when the files where last modified.
 		updateLastModified(Main.FILE_LIST_PATH);
 		
@@ -667,7 +813,10 @@ public class Executor implements Runnable {
 		if(shouldSendIP) {
 			msg += " #IP";
 		}
-		sendText(msg, main.getIp(), Main.STANDARD_MESSAGE_PORT);
+		if(!Executor.sendText(msg, main.getIp(), Main.STANDARD_MESSAGE_PORT)) {
+			System.out.println("An error occurred. Skipping synchronization!");
+			return;
+		}
 		
 //		// Tell the linked program what IP-address we have
 //		if(shouldSendIP) {

@@ -74,4 +74,10 @@ public class FileElement {
 		this.lastModified2 = lastModified2;
 	}
 	
+	public boolean isConflict() {
+		// If both this file_list's file and the other file_list's file was modified, the file is a conflict.
+		// If the file was modified on both computers after last sync, it is a conflict
+		return getLastModified() > getLastSynchronized() && getLastModified2() > getLastSynchronized();
+	}
+	
 }

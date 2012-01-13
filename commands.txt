@@ -29,11 +29,14 @@ set_ip [ip]			Links the program to ip. Note: '#IP' can be used (with every comma
 
 print ip			Prints the ip that the program is linked to.
 
+print file_list			Prints the content of the file_list.
+
 exit				Equivalent to 'quit'.
 				Terminates the program, and forces executors (threads) to stop.
 
 load files			Loads the files that should be synchronized (files that has been updated
 				since last synchronization) (Needed to run sync files).
+				(This will also update the lastModified attribute.)
 				If a conflict is discovered, the user is prompted.
 
 send file [id]			Sends the file with the corresponding id to the linked program.
@@ -41,6 +44,11 @@ send file [id]			Sends the file with the corresponding id to the linked program.
 sync files			Equivalent to 'synchronize files'.
 				Starts file synchronizing. 
 				Important note: Should not be used before 'load files'!
+
+add_file [file path]		Adds the file given at file path to the file_list
+
+remove_file [file ID]		Equivalent to 'rm_file'.
+				Removes the file with the given ID from the file_list
 
 generate file_list		Generates an empty file_list
 
